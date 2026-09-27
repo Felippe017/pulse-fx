@@ -1,0 +1,5 @@
+CREATE TABLE favorites (
+  id SERIAL PRIMARY KEY,
+  indicator_id INTEGER NOT NULL UNIQUE REFERENCES indicators(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
