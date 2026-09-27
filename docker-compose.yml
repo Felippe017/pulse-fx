@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pulsefx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulsefx_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-pulsefx}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pulsefx}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "${API_PORT:-3001}:3001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pulsefx}:${POSTGRES_PASSWORD:-pulsefx_secret}@postgres:5432/${POSTGRES_DB:-pulsefx}
+      FRED_API_KEY: ${FRED_API_KEY}
+      API_PORT: 3001
+      SYNC_TTL_MINUTES: ${SYNC_TTL_MINUTES:-60}
+      ADMIN_KEY: ${ADMIN_KEY:-pulse-fx-admin-key}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

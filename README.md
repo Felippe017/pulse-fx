@@ -1,138 +1,249 @@
-# Desafio técnico — Full Stack · **Pulse FX**
+# Pulse FX — Câmbio & Indicadores Macro
 
-**Prazo:** 3 dias corridos a partir do recebimento deste briefing.  
-**Nome do produto:** Pulse FX (uso exclusivo neste desafio; sem reaproveitamento comercial).
+Aplicação full-stack para acompanhamento de **câmbio (BRL)** e **indicadores macroeconômicos** a partir de fontes públicas (BCB e FRED), com dados **persistidos em PostgreSQL**, **API própria Node.js/TypeScript** e cliente **web React/TypeScript**.
 
----
-
-## 1. Contexto
-
-Construir um **MVP** chamado **Pulse FX**: aplicação para acompanhar **câmbio (BRL)** e **indicadores macro** a partir de **fontes públicas**, com dados **persistidos**, **API própria** e cliente **web** de qualidade próxima à produção. O objetivo é avaliar **domínio de produto**, **engenharia backend e frontend**, **dados**, **testes** e **reprodutibilidade** da solução (incluindo **containerização** conforme a tabela abaixo).
-
-### Avaliação: resultado final e sinais de engenharia
-
-A banca considera **também aspectos implícitos** — **não apenas** se o MVP funciona no estado final da entrega. Podem influenciar o julgamento, entre outros: **estrutura e organização do código**, **sequência e qualidade das mensagens de commit**, **arquitetura e modularização**, **organização do repositório** (com **preferência por monorepo**: um único repositório Git reunindo frontend web, backend e artefatos compartilhados; outro formato **só** se **justificado** no README), **pastas e limites entre pacotes/serviços**, **documentação útil** e **demais práticas** de engenharia de software perceptíveis no histórico e no código. Critérios de peso detalhados são **internos** ao processo seletivo.
+> ⚠️ **Disclaimer:** Informação educacional. Não constitui recomendação de investimento.
 
 ---
 
-## 2. Stack obrigatória e alinhamento à vaga
+## Sumário
 
-| Área | Requisito |
-|------|-----------|
-| **Frontend** | **Web** com **React** + **TypeScript**. |
-| **Backend** | **Node.js** + **TypeScript**, código de **produção** (camadas, SOLID, Clean Code) — não prova de conceito descartável. |
-| **Dados** | **PostgreSQL** é o banco de dados obrigatório. |
-| **Containerização** | **Docker** + **Docker Compose** (API, PostgreSQL e demais serviços necessários à solução). |
-| **Testes** | Mínimo de **5 arquivos de teste** (ver seção 7). |
-
----
-
-## 3. Fontes de dados
-
-- **Obrigatório:** integrar dados de **duas fontes distintas**, incluindo:
-  - **BCB** (dados abertos / séries — ex.: câmbio);
-  - **FRED** (Federal Reserve Economic Data — API com chave).
-- **Escolha das séries:** **o candidato define** quais indicadores expor (mínimo um conjunto coerente para o Pulse FX), lê a **documentação oficial** de cada fonte e explica **em 2–5 linhas por indicador** por que faz sentido para o usuário.
-
-### Fontes de referência (URLs)
-
-Referências de partida; o candidato deve **confirmar** endpoints, parâmetros e termos de uso na documentação vigente.
-
-| Fonte | Descrição (resumo) | URL principal |
-|--------|---------------------|---------------|
-| **BCB — Dados Abertos** | Catálogos e conjuntos de dados públicos do Banco Central do Brasil. | https://dadosabertos.bcb.gov.br/ |
-| **BCB — Olinda (PTAX)** | API de câmbio (ex.: taxas de fechamento PTAX); documentação interativa (Swagger). | https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/swagger-ui3/ |
-| **BCB — SGS (séries temporais)** | Portal de localização e metadados de séries do Sistema Gerenciador de Séries Temporais (códigos de série, periodicidade). | https://www3.bcb.gov.br/sgspub/ |
-| **FRED — portal** | Séries econômicas dos EUA e de outros provedores agregados pelo Federal Reserve Bank of St. Louis. | https://fred.stlouisfed.org/ |
-| **FRED — documentação da API** | Parâmetros, limites e exemplos de chamadas (`fred/series/observations`, etc.). | https://fred.stlouisfed.org/docs/api/fred/ |
-| **FRED — chave de API** | Registro e gestão de API key. | https://fredaccount.stlouisfed.org/apikeys |
-| **IPEADATA** *(opcional)* | Séries socioeconômicas do Ipea (Brasil); útil como fonte extra se o desenho do MVP fizer sentido. | https://www.ipeadata.gov.br/ |
-| **World Bank Open Data — API** *(opcional)* | Indicadores de desenvolvimento (mundo); exige leitura da documentação de indicadores e países. | https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation |
+- [Início Rápido (Docker)](#início-rápido-docker)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Séries Escolhidas](#séries-escolhidas)
+- [Regras de Variação](#regras-de-variação)
+- [Arquitetura](#arquitetura)
+- [Decisões Técnicas](#decisões-técnicas)
+- [Rodando o Frontend](#rodando-o-frontend)
+- [Rodando Testes e Lint](#rodando-testes-e-lint)
 
 ---
 
-## 4. Funcionalidades (MVP)
+## Início Rápido (Docker)
 
-1. **Dashboard (web):** cards com nome do indicador, **último valor**, **data de referência** da observação e **variação percentual** segundo regras documentadas (seção 5).
-2. **Detalhe (web):** série temporal (tabela ou gráfico simples), janela de histórico por tipo de série, texto sobre **limitações dos dados**.
-3. **“Meus indicadores”:** permitir marcar/desmarcar favoritos com **persistência real** no backend (ou estratégia híbrida **documentada** no README).
-4. **Sincronização:** política clara de **atualização** (TTL, job agendado, endpoint admin protegido, etc.) que **evite** chamadas descontroladas ou redundantes às APIs externas.
-5. **Disclaimer** visível: informação **educacional**; **não** é recomendação de investimento.
+**Pré-requisitos:** Docker e Docker Compose instalados.
 
----
+```bash
+# 1. Clonar o repositório
+git clone <url-do-repo> pulse-fx && cd pulse-fx
 
-## 5. Variação percentual (regra de negócio)
+# 2. Copiar e configurar variáveis de ambiente
+cp .env.example .env
+# Editar .env e preencher FRED_API_KEY (obter em https://fredaccount.stlouisfed.org/apikeys)
 
-O candidato deve **definir, implementar e documentar** a variação **por indicador ou por tipo de série** (ex.: FX diário vs macro mensal).
+# 3. Subir tudo
+docker compose up --build
 
-**Requisitos:**
+# 4. Acessar
+# Frontend: http://localhost:3000
+# API:      http://localhost:3001/api/indicators
+```
 
-- **Último valor** = observação mais recente **válida** já persistida (alinhada à política de sync/cache).
-- **Data de referência** = data da observação exibida (não confundir com “hora da consulta”).
-- **Variação %** com denominador explícito, por exemplo:
-  - **Séries diárias (FX):** comparar último fechamento com o valor de **N dias úteis** anteriores com dado disponível (o candidato fixa N e justifica).
-  - **Séries mensais (macro):** comparar último mês com **N meses** anteriores (N fixo e justificado — não usar “últimos 5 dias” em série mensal).
-- **Consistência:** mesma regra no **dashboard** e na **tela de detalhe**.
-- **Calendário:** documentar tratamento de **fins de semana / feriados / lacunas** (ex.: último dado conhecido vs interpolação — interpolação de mercado financeiro costuma ser desaconselhada; preferir regra simples e honesta).
-
----
-
-## 6. Entregáveis
-
-- **Monorepo:** um **único** repositório Git contendo **frontend web**, **backend** e demais pacotes necessários ao MVP, com **README raiz** único contendo:
-  - como subir o ambiente (**Docker Compose**);
-  - variáveis de ambiente;
-  - decisões técnicas relevantes e trade-offs;
-  - séries escolhidas + URLs/documentação de referência;
-  - regras de **variação** e **janela de histórico** por tipo de série;
-  - como rodar o **frontend web**;
-  - como rodar **testes** e **lint**.
-- **Migrations** PostgreSQL versionadas.
-- **Opcional recomendado:** vídeo de 2–3 min ou screenshots do fluxo completo.
+O ambiente sobe em menos de 2 minutos. Na primeira inicialização, a API:
+1. Roda as migrations do PostgreSQL
+2. Faz seed dos indicadores
+3. Sincroniza dados de todas as fontes
+4. Inicia o servidor na porta 3001
 
 ---
 
-## 7. Testes automatizados
+## Variáveis de Ambiente
 
-**Mínimo: 5 arquivos de teste** com sufixo convencional, por exemplo:
-
-- `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`
-
-**O que conta:**
-
-- Arquivos com **casos de teste reais** (assertivas sobre comportamento).
-- **Não** contar: arquivos vazios, apenas `describe` sem `it`, ou duplicação artificial do mesmo teste renomeada só para bater número.
-
-**Distribuição sugerida (referência, não obrigatória):**
-
-1. Regra de **domínio** (ex.: cálculo de variação / normalização de datas).
-2. **Persistência** ou repositório.
-3. **HTTP** (rota/handler da API).
-4. **Frontend web** (componente **ou** hook com lógica relevante).
-5. **Integração** (ex.: API + PostgreSQL com ambiente de teste, ou estratégia equivalente documentada).
-
-Cobertura em **%** não é critério; **qualidade** e **relevância** dos testes sim.
+| Variável | Descrição | Default |
+|----------|-----------|---------|
+| `POSTGRES_USER` | Usuário do PostgreSQL | `pulsefx` |
+| `POSTGRES_PASSWORD` | Senha do PostgreSQL | `pulsefx_secret` |
+| `POSTGRES_DB` | Nome do banco | `pulsefx` |
+| `DATABASE_URL` | Connection string completa | (gerada pelo compose) |
+| `FRED_API_KEY` | **Obrigatória.** Chave da API FRED | — |
+| `API_PORT` | Porta da API | `3001` |
+| `SYNC_TTL_MINUTES` | TTL de cache (min) entre syncs | `60` |
+| `ADMIN_KEY` | Chave para trigger manual de sync | `pulse-fx-admin-key` |
 
 ---
 
-## 8. Fora de escopo
+## Séries Escolhidas
 
-Trading, ordens, conta bancária, pagamentos, KYC completo, recomendação de investimento, streaming tick-by-tick, multi-tenant enterprise.
+### Fonte: BCB (Banco Central do Brasil)
+
+| Indicador | Código | Freq. | Justificativa |
+|-----------|--------|-------|---------------|
+| **Dólar PTAX (Venda)** | Olinda PTAX — `CotacaoDolarPeriodo` | Diária | Taxa oficial de câmbio USD/BRL usada em contratos, importações e exportações. Referência principal para FX no Brasil. |
+| **Euro PTAX (Venda)** | Olinda PTAX — `CotacaoMoedaPeriodo` (EUR) | Diária | Segunda moeda mais relevante para comércio exterior e investimentos internacionais. |
+| **Taxa Selic** | SGS série `432` | Diária | Taxa básica de juros do Brasil. Impacta custo de oportunidade em câmbio e atratividade do Real. |
+| **IPCA (acum. 12m)** | SGS série `13522` | Mensal | Inflação oficial acumulada. Pressão inflacionária desvaloriza o Real. |
+
+**Referências BCB:**
+- PTAX Swagger: https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/swagger-ui3/
+- SGS: https://www3.bcb.gov.br/sgspub/
+- Dados Abertos: https://dadosabertos.bcb.gov.br/
+
+### Fonte: FRED (Federal Reserve Economic Data)
+
+| Indicador | Series ID | Freq. | Justificativa |
+|-----------|-----------|-------|---------------|
+| **Fed Funds Rate** | `FEDFUNDS` | Mensal | Taxa de juros dos EUA. Diferencial BR-US é o principal driver do fluxo cambial. |
+| **US CPI** | `CPIAUCSL` | Mensal | Inflação americana. Impacta expectativas de política monetária do Fed e valor do dólar. |
+
+**Referências FRED:**
+- Portal: https://fred.stlouisfed.org/
+- API Docs: https://fred.stlouisfed.org/docs/api/fred/
+- API Key: https://fredaccount.stlouisfed.org/apikeys
 
 ---
 
-## 9. Submissão
+## Regras de Variação
 
-- Link do repositório (GitHub/GitLab) com histórico de commits **coerente** com o trabalho (evitar um único commit monolítico gigante no último minuto).
-- Instruções claras para **rodar localmente em menos de 15 minutos** em máquina com Docker (quando aplicável).
+### Definição
+
+- **Último valor:** observação mais recente válida já persistida no banco.
+- **Data de referência:** data da observação exibida (não confundir com hora da consulta).
+- **Variação %:** `((valor_atual - valor_anterior) / |valor_anterior|) × 100`
+
+### Denominador por tipo de série
+
+| Tipo | Denominador (N) | Justificativa |
+|------|-----------------|---------------|
+| **Diária (FX, Selic)** | 1 dia útil anterior com dado | Variação dia-a-dia é o padrão de mercado para câmbio |
+| **Mensal (IPCA, Fed Funds, CPI)** | 1 mês anterior com dado | Comparação mês-a-mês é a mais intuitiva para indicadores macro |
+
+### Janela de histórico
+
+| Tipo | Janela padrão | Períodos no detalhe |
+|------|--------------|---------------------|
+| **Diária** | 90 dias | 30D, 60D, 90D |
+| **Mensal** | 24 meses | 6M, 12M, 24M |
+
+### Tratamento de lacunas
+
+- **Fins de semana e feriados:** usa o **último dado conhecido** (carry forward).
+- **Sem interpolação** — em dados financeiros, interpolação pode gerar valores enganosos.
+- **Feriados:** não são tratados de forma especial; a ausência de dado simplesmente usa o anterior.
 
 ---
 
-## 10. Dúvidas
+## Arquitetura
 
-Esclarecimentos **gerais** de interpretação do enunciado podem ser solicitados em **até 1 e-mail/mensagem**; respostas objetivas não incluem solução de desenho nem código.
+```
+pulse-fx/                         # Monorepo
+├── docker-compose.yml            # PostgreSQL + API + Web
+├── packages/shared/              # Tipos TypeScript compartilhados
+├── apps/
+│   ├── api/                      # Backend Node.js + Express + TypeScript
+│   │   └── src/
+│   │       ├── config/           # Validação de env com Zod
+│   │       ├── database/         # Pool pg + migrations SQL
+│   │       ├── domain/           # Lógica pura (variação, datas)
+│   │       ├── repositories/     # Acesso a dados (indicadores, observações, favoritos)
+│   │       ├── services/         # Integração BCB PTAX, BCB SGS, FRED, sync
+│   │       ├── routes/           # Handlers HTTP
+│   │       └── middleware/       # Error handler
+│   └── web/                      # Frontend React + Vite + TypeScript
+│       └── src/
+│           ├── api/              # Client HTTP tipado
+│           ├── hooks/            # Custom hooks (useIndicators, useIndicatorDetail)
+│           ├── components/       # Dashboard, Cards, Detalhe, Chart, Disclaimer
+│           └── styles/           # Design system CSS (dark theme + glassmorphism)
+```
+
+### Endpoints da API
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/indicators` | Lista indicadores com último valor + variação % |
+| `GET` | `/api/indicators/:id` | Detalhe com série temporal (params: `days`, `months`) |
+| `POST` | `/api/favorites/:id` | Toggle favorito |
+| `GET` | `/api/favorites` | Lista IDs favoritados |
+| `POST` | `/api/sync` | Sync manual (requer header `X-Admin-Key`) |
+| `GET` | `/api/health` | Health check |
+
+### Banco de Dados (PostgreSQL)
+
+4 migrations versionadas:
+1. `indicators` — Metadados dos indicadores (com seed)
+2. `observations` — Valores temporais com índice `(indicator_id, date)`
+3. `favorites` — Indicadores favoritados
+4. `sync_log` — Log de sincronização com TTL
 
 ---
 
-**Versão do briefing:** 1.9  
-**Última atualização:** 2026-06-10
+## Decisões Técnicas
+
+### Monorepo com npm workspaces
+Escolhido por simplicidade — sem necessidade de ferramentas como Turborepo/Nx para um projeto deste porte. Os 3 pacotes (shared, api, web) compartilham tipos via workspace links.
+
+### Express (não Fastify/Nest)
+Framework maduro, com ecossistema robusto de middleware. Para um MVP, Express oferece o melhor balanço entre produtividade e familiaridade.
+
+### Migrations SQL puras (não ORM)
+Controle total sobre as queries. ORMs abstraem demais para um projeto onde performance de queries SQL (como `LATERAL JOIN`) é importante. Migrations são simples arquivos `.sql` versionados.
+
+### Política de sincronização com TTL
+- **TTL de 60 minutos** por indicador — evita chamadas redundantes às APIs externas.
+- **Sync no boot** da API — garante dados atualizados ao subir o serviço.
+- **Endpoint admin** — permite trigger manual protegido por header `X-Admin-Key`.
+- **Upsert** — `ON CONFLICT DO UPDATE` evita duplicatas.
+
+### Favoritos sem autenticação
+Como o enunciado não exige sistema de usuários, favoritos são persistidos em tabela simples no banco (1 flag por indicador). Para multi-usuário, bastaria adicionar `user_id` à tabela. A estratégia é documentada e intencional.
+
+### Design system CSS puro (sem Tailwind)
+Decisão deliberada por controle total sobre o design. Custom properties CSS permitem tematização eficiente. O design usa glassmorphism, gradientes animados e micro-animações para um visual premium.
+
+### Recharts para gráficos
+Biblioteca React-first com boa integração e customização. AreaChart com gradiente e tooltips customizados no tema dark.
+
+### Trade-offs
+
+- **Sem WebSocket/SSE:** polling manual é suficiente para um MVP com dados que atualizam no máximo 1x/hora.
+- **Sem Redis:** para o volume de dados deste MVP, PostgreSQL como cache é suficiente.
+- **Sem autenticação:** fora do escopo; favoritos são globais.
+- **Sem i18n:** interface em português fixo, adequada ao contexto BR.
+
+---
+
+## Rodando o Frontend (dev local)
+
+```bash
+# Na raiz do monorepo
+npm install
+npm run dev:web
+# Acesse http://localhost:3000
+```
+
+O Vite dev server faz proxy automático de `/api/*` para `http://localhost:3001`.
+
+---
+
+## Rodando Testes e Lint
+
+```bash
+# Todos os testes
+npm test
+
+# Só backend
+npm run test:api
+
+# Só frontend
+npm run test:web
+
+# Lint
+npm run lint
+```
+
+### Arquivos de teste (6 arquivos)
+
+| Arquivo | Tipo | Escopo |
+|---------|------|--------|
+| `variation.test.ts` | Domínio | Cálculo de variação % |
+| `date-utils.test.ts` | Domínio | Dias úteis, formatação de datas |
+| `indicators.routes.test.ts` | HTTP | Rotas GET /api/indicators |
+| `sync.routes.test.ts` | HTTP | Rota POST /api/sync (auth) |
+| `IndicatorCard.test.tsx` | Frontend | Componente card (renderização, clicks) |
+| `Disclaimer.test.tsx` | Frontend | Componente disclaimer |
+
+---
+
+## Briefing Original
+
+O enunciado completo do desafio está em [`BRIEFING.md`](./BRIEFING.md).

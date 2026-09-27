@@ -1,0 +1,23 @@
+{
+  "name": "pulse-fx",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "test:api": "npm test --workspace=apps/api",
+    "test:web": "npm test --workspace=apps/web",
+    "test": "npm run test:api && npm run test:web",
+    "lint:api": "npm run lint --workspace=apps/api",
+    "lint:web": "npm run lint --workspace=apps/web",
+    "lint": "npm run lint:api && npm run lint:web"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
